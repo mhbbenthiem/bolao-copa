@@ -44,6 +44,7 @@ def converter_data_brasil(data_iso: str):
     dt_br = dt_utc - timedelta(hours=3)
 
     return dt_br
+@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def carregar_jogos():
     planilha = conectar_planilha()
     aba = planilha.worksheet("Jogos")
@@ -56,7 +57,7 @@ def carregar_jogos():
     df["Data"] = df["Data"].apply(converter_data_brasil)
     return df
 
-
+@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def carregar_palpites():
     planilha = conectar_planilha()
     aba = planilha.worksheet("Palpites")
@@ -74,7 +75,9 @@ def salvar_palpite(nome: str, jogo_id: str, placar1: int, placar2: int):
     nova_linha = [nome, jogo_id, placar1, placar2, agora] 
     if linha_existente: 
         aba.update(f"A{linha_existente}:E{linha_existente}", [nova_linha]) 
-    else: aba.append_row(nova_linha)
+    else: 
+        aba.append_row(nova_linha)
+        carregar_palpites.clear()
 
 # =========================
 # ATUALIZAR PLACAR REAL
@@ -82,7 +85,7 @@ def salvar_palpite(nome: str, jogo_id: str, placar1: int, placar2: int):
 
 def valido(valor):
     return valor is not None and valor != ""
-
+@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def sincronizar_jogos_com_api():
     dados = buscar_resultados_api()
 
@@ -121,7 +124,9 @@ def sincronizar_jogos_com_api():
                 f"G{linha}:I{linha}",
                 [[int(placar1), int(placar2), status]]
             )
+    carregar_jogos.clear()
 
+@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def jogos_pendentes(nome_usuario: str):
     df_jogos = carregar_jogos()
     df_palpites = carregar_palpites()
@@ -155,7 +160,7 @@ def jogos_pendentes(nome_usuario: str):
 # =========================
 # API FOOTBALL
 # =========================
-
+@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def buscar_resultados_api():
     url = "https://api.football-data.org/v4/matches"
 
@@ -170,7 +175,7 @@ def buscar_resultados_api():
 # =========================
 # SINCRONIZAÇÃO AUTOMÁTICA
 # =========================
-
+@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def sincronizar_jogos_com_api():
     dados = buscar_resultados_api()
 
@@ -214,7 +219,7 @@ def sincronizar_jogos_com_api():
 # =========================
 # PONTUAÇÃO INICIAL
 # =========================
-
+@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def carregar_pontuacao_inicial():
     planilha = conectar_planilha()
 
