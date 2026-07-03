@@ -42,13 +42,7 @@ pagina = navbar()
 if st.button("Atualizar jogos"):
     sincronizar_jogos_com_api()
     st.success("Jogos atualizados!")
-# ---------------------------------------------------------------------------
-# Navegação
-# ---------------------------------------------------------------------------
 
-
-st.sidebar.markdown("---")
-st.sidebar.caption("Bolão da Copa do Mundo 2026 · dados atualizados via API oficial")
 
 
 # ---------------------------------------------------------------------------
