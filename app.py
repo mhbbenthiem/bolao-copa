@@ -12,17 +12,40 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from io import BytesIO
-
-from utils.sheets import carregar_jogos, carregar_palpites, salvar_palpite, carregar_pontuacao_inicial
+from utils.sheets import jogos_pendentes, sincronizar_jogos_com_api, carregar_jogos, carregar_palpites, salvar_palpite, carregar_pontuacao_inicial
 from utils.scoring import montar_classificacao, detalhe_por_pessoa
 from utils.api_copa import buscar_jogos_football_data
+from pathlib import Path
+from components.navbar import navbar
+from components.game_card import game_card
+from components.ranking_card import ranking_card
 
-st.set_page_config(page_title="Bolão Copa do Mundo 2026", page_icon="⚽", layout="wide")
 
+
+st.set_page_config(
+    page_title="Bolão Copa 2026",
+    page_icon="⚽",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+css = Path("style.css").read_text(encoding="utf-8")
+
+st.markdown(
+    f"<style>{css}</style>",
+    unsafe_allow_html=True,
+)
+pagina = navbar()
+
+
+
+if st.button("Atualizar jogos"):
+    sincronizar_jogos_com_api()
+    st.success("Jogos atualizados!")
 # ---------------------------------------------------------------------------
 # Navegação
 # ---------------------------------------------------------------------------
-pagina = st.sidebar.radio("Navegação", ["📝 Meus Palpites", "🏆 Classificação", "⚙️ Admin"])
+
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Bolão da Copa do Mundo 2026 · dados atualizados via API oficial")
@@ -43,7 +66,6 @@ def exportar_excel(df: pd.DataFrame, nome_arquivo: str):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-
 # ---------------------------------------------------------------------------
 # Página: Meus Palpites
 # ---------------------------------------------------------------------------
@@ -51,10 +73,12 @@ if pagina == "📝 Meus Palpites":
     st.title("📝 Registrar / Editar Palpites")
 
     col1, col2 = st.columns(2)
-    nome = col1.text_input("Seu nome")
-    email = col2.text_input("Seu e-mail")
     nome_da_url = st.query_params.get("nome", "")
-    nome = st.text_input("Seu nome", value=nome_da_url)
+    nome = st.text_input(
+        "Seu nome",
+        value=nome_da_url,
+        key="nome_usuario"
+    )
         
 
     if not nome:
@@ -69,7 +93,7 @@ if pagina == "📝 Meus Palpites":
         )
         st.code(f"?nome={nome}", language=None)
 
-    df_jogos = carregar_jogos()
+    df_jogos = jogos_pendentes(nome)
     df_palpites = carregar_palpites()
 
     if df_jogos.empty:
@@ -87,45 +111,7 @@ if pagina == "📝 Meus Palpites":
     st.caption("Jogos com o cadeado 🔒 já começaram e não podem mais ser editados.")
 
     for _, jogo in df_jogos.sort_values("Data").iterrows():
-        jogo_iniciado = jogo["Data"] <= agora
-        cadeado = "🔒 " if jogo_iniciado else ""
-
-        palpite_existente = None
-        if not meus_palpites.empty:
-            linha = meus_palpites[meus_palpites["JogoID"].astype(str) == str(jogo["JogoID"])]
-            if not linha.empty:
-                palpite_existente = linha.iloc[0]
-
-        with st.expander(
-            f"{cadeado}{jogo['Data'].strftime('%d/%m %H:%M')} — {jogo['Time1']} x {jogo['Time2']} "
-            f"({jogo.get('Grupo', '')})"
-        ):
-            c1, c2, c3 = st.columns([2, 2, 1])
-            placar1 = c1.number_input(
-                f"Gols {jogo['Time1']}",
-                min_value=0,
-                max_value=20,
-                value=int(palpite_existente["Placar1"]) if palpite_existente is not None else 0,
-                key=f"p1_{jogo['JogoID']}",
-                disabled=jogo_iniciado,
-            )
-            placar2 = c2.number_input(
-                f"Gols {jogo['Time2']}",
-                min_value=0,
-                max_value=20,
-                value=int(palpite_existente["Placar2"]) if palpite_existente is not None else 0,
-                key=f"p2_{jogo['JogoID']}",
-                disabled=jogo_iniciado,
-            )
-            if not jogo_iniciado:
-                if c3.button("Salvar", key=f"salvar_{jogo['JogoID']}"):
-                    salvar_palpite(nome, jogo["JogoID"], placar1, placar2)
-                    st.success("Palpite salvo!")
-            else:
-                if jogo["PlacarReal1"] is not None and pd.notna(jogo["PlacarReal1"]):
-                    c3.write(f"Real: {int(jogo['PlacarReal1'])} x {int(jogo['PlacarReal2'])}")
-                else:
-                    c3.write("Em andamento/aguardando resultado")
+        game_card(jogo, nome, meus_palpites)
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +123,7 @@ elif pagina == "🏆 Classificação":
     df_jogos = carregar_jogos()
     df_palpites = carregar_palpites()
     pontuacao_inicial = carregar_pontuacao_inicial()
-    classificacao = montar_classificacao(df_palpites, df_jogos)
+    classificacao = montar_classificacao(df_palpites, df_jogos, pontuacao_inicial)
     
     
 
@@ -145,7 +131,8 @@ elif pagina == "🏆 Classificação":
     if classificacao.empty:
         st.info("Ainda não há pontos calculados (nenhum jogo finalizado ou nenhum palpite registrado).")
     else:
-        st.dataframe(classificacao, use_container_width=True)
+        for posicao, (_, pessoa) in enumerate(classificacao.iterrows(), start=1):
+            ranking_card(pessoa, posicao)
         exportar_excel(classificacao, "classificacao_bolao_copa.xlsx")
 
     st.markdown("---")
