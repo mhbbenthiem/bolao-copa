@@ -217,6 +217,30 @@ def sincronizar_jogos_com_api():
 
 
 # =========================
+# LISTA DE NOMES (para dropdown)
+# =========================
+def listar_nomes_participantes(df_palpites: pd.DataFrame = None) -> list:
+    """
+    Retorna a lista de nomes conhecidos, juntando quem está na aba
+    'PontuacaoInicial' com quem já registrou algum palpite (união dos dois),
+    para não deixar ninguém de fora da lista suspensa.
+    """
+    pontuacao_inicial = carregar_pontuacao_inicial()
+    nomes = set()
+
+    if not pontuacao_inicial.empty:
+        nomes.update(pontuacao_inicial["Nome"].dropna().astype(str).str.strip())
+
+    if df_palpites is None:
+        df_palpites = carregar_palpites()
+
+    if not df_palpites.empty:
+        nomes.update(df_palpites["Nome"].dropna().astype(str).str.strip())
+
+    return sorted(nomes, key=lambda n: n.lower())
+
+
+# =========================
 # PONTUAÇÃO INICIAL
 # =========================
 @st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos

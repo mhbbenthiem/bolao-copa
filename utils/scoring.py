@@ -8,6 +8,44 @@ Regras de pontuação do bolão:
 import pandas as pd
 
 
+def filtrar_jogos_para_conferencia(df_jogos: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove da conferência (tela "Visão Geral"):
+      - jogos com data anterior a hoje (já aconteceram, não faz sentido cobrar palpite);
+      - jogos cujos dois times ainda não foram definidos (ex: fases eliminatórias
+        aguardando classificados — time vazio, ou textos como "TBD", "A definir",
+        "Vencedor Grupo A", "1º Grupo B" etc.).
+    """
+    if df_jogos.empty:
+        return df_jogos
+
+    df = df_jogos.copy()
+
+    if df["Data"].dt.tz is not None:
+        hoje = pd.Timestamp.now(tz=df["Data"].dt.tz).normalize()
+    else:
+        hoje = pd.Timestamp.now().normalize()
+
+    df = df[df["Data"].notna() & (df["Data"] >= hoje)]
+
+    marcadores_indefinido = [
+        "tbd", "a definir", "indefinido", "vencedor", "perdedor",
+        "definido", "classificado", "1º", "2º", "3º", "melhor",
+    ]
+
+    def time_definido(valor) -> bool:
+        if pd.isna(valor):
+            return False
+        texto = str(valor).strip().lower()
+        if texto == "":
+            return False
+        return not any(marcador in texto for marcador in marcadores_indefinido)
+
+    df = df[df["Time1"].apply(time_definido) & df["Time2"].apply(time_definido)]
+
+    return df
+
+
 def calcular_pontos_palpite(placar1_previsto, placar2_previsto, placar1_real, placar2_real) -> int:
     """Calcula os pontos de um único palpite, dado o resultado real do jogo."""
     if placar1_real is None or placar2_real is None or pd.isna(placar1_real) or pd.isna(placar2_real):
@@ -91,6 +129,56 @@ def montar_classificacao(
     )
     classificacao.index += 1
     return classificacao
+
+def montar_conferencia(df_palpites: pd.DataFrame, df_jogos: pd.DataFrame, nomes: list) -> pd.DataFrame:
+    """
+    Para cada nome da lista, verifica quantos jogos já têm palpite registrado
+    e quais jogos ainda estão faltando. Útil para conferir, antes da Copa
+    começar, se todo mundo já preencheu tudo.
+    """
+    if df_jogos.empty:
+        return pd.DataFrame(columns=["Nome", "TotalJogos", "Preenchidos", "Faltando", "JogosFaltantes"])
+
+    total_jogos = len(df_jogos)
+
+    if df_palpites.empty:
+        jogos_por_nome = {}
+    else:
+        jogos_por_nome = (
+            df_palpites.assign(NomeNorm=df_palpites["Nome"].str.strip().str.lower())
+            .groupby("NomeNorm")["JogoID"]
+            .apply(lambda s: set(s.astype(str)))
+            .to_dict()
+        )
+
+    linhas = []
+    for nome in nomes:
+        nome_norm = nome.strip().lower()
+        respondidos = jogos_por_nome.get(nome_norm, set())
+
+        faltantes = df_jogos[~df_jogos["JogoID"].astype(str).isin(respondidos)]
+
+        descricao_faltantes = [
+            "{} x {} ({})".format(
+                j["Time1"],
+                j["Time2"],
+                j["Data"].strftime("%d/%m %H:%M") if pd.notna(j.get("Data")) else "data a definir",
+            )
+            for _, j in faltantes.iterrows()
+        ]
+
+        linhas.append(
+            {
+                "Nome": nome,
+                "TotalJogos": total_jogos,
+                "Preenchidos": total_jogos - len(faltantes),
+                "Faltando": len(faltantes),
+                "JogosFaltantes": descricao_faltantes,
+            }
+        )
+
+    return pd.DataFrame(linhas)
+
 
 def detalhe_por_pessoa(df_palpites: pd.DataFrame, df_jogos: pd.DataFrame, nome: str) -> pd.DataFrame:
     df = df_palpites[df_palpites["Nome"].str.strip().str.lower() == nome.strip().lower()]

@@ -12,8 +12,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from io import BytesIO
-from utils.sheets import jogos_pendentes, sincronizar_jogos_com_api, carregar_jogos, carregar_palpites, salvar_palpite, carregar_pontuacao_inicial
-from utils.scoring import montar_classificacao, detalhe_por_pessoa
+from utils.sheets import jogos_pendentes, sincronizar_jogos_com_api, carregar_jogos, carregar_palpites, salvar_palpite, carregar_pontuacao_inicial, listar_nomes_participantes
+from utils.scoring import montar_classificacao, detalhe_por_pessoa, montar_conferencia, filtrar_jogos_para_conferencia
 from utils.api_copa import buscar_jogos_football_data
 from pathlib import Path
 from components.navbar import navbar
@@ -68,12 +68,29 @@ if pagina == "📝 Meus Palpites":
 
     col1, col2 = st.columns(2)
     nome_da_url = st.query_params.get("nome", "")
-    nome = st.text_input(
-        "Seu nome",
-        value=nome_da_url,
-        key="nome_usuario"
-    )
-        
+
+    nomes_disponiveis = listar_nomes_participantes()
+    OPCAO_VAZIA = "Selecione seu nome..."
+    OPCAO_OUTRO = "➕ Outro (não estou na lista)"
+    opcoes = [OPCAO_VAZIA] + nomes_disponiveis + [OPCAO_OUTRO]
+
+    if nome_da_url and nome_da_url in nomes_disponiveis:
+        indice_padrao = opcoes.index(nome_da_url)
+    else:
+        indice_padrao = 0
+
+    escolha = st.selectbox("Seu nome", opcoes, index=indice_padrao, key="escolha_nome")
+
+    if escolha == OPCAO_OUTRO:
+        nome = st.text_input(
+            "Digite seu nome completo",
+            value=nome_da_url if nome_da_url not in nomes_disponiveis else "",
+            key="nome_usuario_manual",
+        )
+    elif escolha == OPCAO_VAZIA:
+        nome = ""
+    else:
+        nome = escolha
 
     if not nome:
         st.info("Digite seu nome para ver e registrar seus palpites.")
@@ -139,6 +156,58 @@ elif pagina == "🏆 Classificação":
         else:
             colunas = ["Time1", "Time2", "Placar1", "Placar2", "PlacarReal1", "PlacarReal2", "Pontos"]
             st.dataframe(detalhe[colunas], use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Página: Visão Geral (conferência — todo mundo preencheu todos os jogos?)
+# ---------------------------------------------------------------------------
+elif pagina == "📊 Visão Geral":
+    st.title("📊 Visão Geral")
+    st.caption("Confira quem já preencheu todos os palpites e quem ainda está devendo.")
+
+    df_jogos = carregar_jogos()
+    df_palpites = carregar_palpites()
+    nomes = listar_nomes_participantes(df_palpites)
+
+    if df_jogos.empty:
+        st.warning("Nenhum jogo carregado ainda. Peça ao organizador para atualizar na aba Admin.")
+        st.stop()
+
+    df_jogos_conferencia = filtrar_jogos_para_conferencia(df_jogos)
+
+    if df_jogos_conferencia.empty:
+        st.info("Não há jogos futuros com times já definidos para conferir no momento.")
+        st.stop()
+
+    if not nomes:
+        st.info("Ainda não há ninguém na lista (nem em 'PontuacaoInicial', nem em 'Palpites').")
+        st.stop()
+
+    conferencia = montar_conferencia(df_palpites, df_jogos_conferencia, nomes)
+
+    completos = int((conferencia["Faltando"] == 0).sum())
+    incompletos = len(conferencia) - completos
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total de jogos", int(conferencia["TotalJogos"].iloc[0]))
+    m2.metric("✅ Completaram tudo", completos)
+    m3.metric("⚠️ Ainda faltando", incompletos)
+
+    st.markdown("---")
+
+    ordenado = conferencia.sort_values(["Faltando", "Nome"], ascending=[False, True])
+
+    for _, pessoa in ordenado.iterrows():
+        completo = pessoa["Faltando"] == 0
+        rotulo = f"{'✅' if completo else '⚠️'} {pessoa['Nome']} — {pessoa['Preenchidos']}/{pessoa['TotalJogos']} jogos preenchidos"
+
+        with st.expander(rotulo, expanded=not completo):
+            if completo:
+                st.success("Todos os jogos preenchidos! 🎉")
+            else:
+                st.write(f"Faltam **{pessoa['Faltando']}** jogo(s):")
+                for jogo in pessoa["JogosFaltantes"]:
+                    st.write(f"- {jogo}")
 
 
 # ---------------------------------------------------------------------------
