@@ -62,22 +62,37 @@ def carregar_palpites():
     planilha = conectar_planilha()
     aba = planilha.worksheet("Palpites")
     return pd.DataFrame(aba.get_all_records())
-def salvar_palpite(nome: str, jogo_id: str, placar1: int, placar2: int): 
-    """ Salva ou atualiza (upsert) o palpite de uma pessoa para um jogo específico. Se já existir uma linha para (nome, jogo_id), ela é atualizada. Caso contrário, uma nova linha é criada. Observação: a identificação é feita só pelo nome (sem e-mail). Se duas pessoas tiverem exatamente o mesmo nome, oriente-as a usar nome completo (ex: "João Silva" em vez de só "João") para evitar que os palpites se misturem. """ 
-    planilha = conectar_planilha() 
-    aba = planilha.worksheet("Palpites") 
-    registros = aba.get_all_records() 
-    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
-    linha_existente = None 
-    for i, r in enumerate(registros): 
-        if str(r.get("Nome", "")).strip().lower() == nome.strip().lower() and str( r.get("JogoID", "") ) == str(jogo_id): linha_existente = i + 2 
-        break 
-    nova_linha = [nome, jogo_id, placar1, placar2, agora] 
-    if linha_existente: 
-        aba.update(f"A{linha_existente}:E{linha_existente}", [nova_linha]) 
-    else: 
+def salvar_palpite(nome: str, jogo_id: str, placar1: int, placar2: int):
+    """
+    Salva ou atualiza (upsert) o palpite de uma pessoa para um jogo específico.
+    Se já existir uma linha para (nome, jogo_id), ela é atualizada. Caso
+    contrário, uma nova linha é criada.
+    Observação: a identificação é feita só pelo nome (sem e-mail). Se duas
+    pessoas tiverem exatamente o mesmo nome, oriente-as a usar nome completo
+    (ex: "João Silva" em vez de só "João") para evitar que os palpites se
+    misturem.
+    """
+    planilha = conectar_planilha()
+    aba = planilha.worksheet("Palpites")
+    registros = aba.get_all_records()
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    linha_existente = None
+    for i, r in enumerate(registros):
+        if (
+            str(r.get("Nome", "")).strip().lower() == nome.strip().lower()
+            and str(r.get("JogoID", "")) == str(jogo_id)
+        ):
+            linha_existente = i + 2
+            break
+
+    nova_linha = [nome, jogo_id, placar1, placar2, agora]
+    if linha_existente:
+        aba.update(f"A{linha_existente}:E{linha_existente}", [nova_linha])
+    else:
         aba.append_row(nova_linha)
-        carregar_palpites.clear()
+
+    carregar_palpites.clear()
 
 # =========================
 # ATUALIZAR PLACAR REAL
@@ -127,36 +142,21 @@ def sincronizar_jogos_com_api():
     carregar_jogos.clear()
 
 @st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
-def jogos_pendentes(nome_usuario: str):
+def jogos_pendentes(nome_usuario: str = None):
+    """
+    Retorna os jogos que ainda fazem sentido aparecer na tela de palpites:
+    exclui apenas os jogos já FINALIZADOS. Jogos que a pessoa já palpitou
+    continuam aparecendo (para permitir edição enquanto não começarem).
+    """
     df_jogos = carregar_jogos()
-    df_palpites = carregar_palpites()
 
     if df_jogos.empty:
         return df_jogos
 
-    # 1) Remove jogos já finalizados
-    df_jogos = df_jogos[
+    return df_jogos[
         df_jogos["Status"].fillna("").astype(str).str.upper() != "FINISHED"
     ]
 
-    # 2) Se não houver palpites, retorna só os não finalizados
-    if df_palpites.empty:
-        return df_jogos
-
-    nome = nome_usuario.strip().lower()
-
-    df_user = df_palpites[
-        df_palpites["Nome"].str.strip().str.lower() == nome
-    ]
-
-    jogos_ja_respondidos = set(df_user["JogoID"].astype(str))
-
-    # 3) Remove jogos já respondidos
-    df_filtrado = df_jogos[
-        ~df_jogos["JogoID"].astype(str).isin(jogos_ja_respondidos)
-    ]
-
-    return df_filtrado
 # =========================
 # API FOOTBALL
 # =========================

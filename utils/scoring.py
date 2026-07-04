@@ -52,7 +52,8 @@ def calcular_pontos_palpite(placar1_previsto, placar2_previsto, placar1_real, pl
         return None  # jogo ainda não aconteceu / sem resultado
 
     placar1_previsto, placar2_previsto = int(placar1_previsto), int(placar2_previsto)
-    placar1_real, placar2_real = int(placar1_real), int(placar2_real)
+    if placar1_real in ("", None) or placar2_real in ("", None):
+        return 0
 
     if placar1_previsto == placar1_real and placar2_previsto == placar2_real:
         return 10
@@ -178,6 +179,44 @@ def montar_conferencia(df_palpites: pd.DataFrame, df_jogos: pd.DataFrame, nomes:
         )
 
     return pd.DataFrame(linhas)
+
+
+def montar_placares_por_jogo(df_palpites: pd.DataFrame, df_jogos: pd.DataFrame) -> dict:
+    """
+    Agrupa os palpites por jogo. Retorna um dicionário {JogoID: [lista de
+    palpites]}, onde cada palpite é {"Nome", "Placar1", "Placar2"},
+    ordenados por nome. Útil para conferir, jogo a jogo, o que cada pessoa
+    apostou.
+    """
+    resultado = {}
+
+    if df_jogos.empty:
+        return resultado
+
+    if df_palpites.empty:
+        for _, jogo in df_jogos.iterrows():
+            resultado[str(jogo["JogoID"])] = []
+        return resultado
+
+    palpites = df_palpites.copy()
+    palpites["JogoID"] = palpites["JogoID"].astype(str)
+
+    for _, jogo in df_jogos.iterrows():
+        jogo_id = str(jogo["JogoID"])
+        palpites_do_jogo = palpites[palpites["JogoID"] == jogo_id]
+
+        lista = [
+            {
+                "Nome": r["Nome"],
+                "Placar1": int(r["Placar1"]),
+                "Placar2": int(r["Placar2"]),
+            }
+            for _, r in palpites_do_jogo.iterrows()
+        ]
+
+        resultado[jogo_id] = sorted(lista, key=lambda p: p["Nome"].lower())
+
+    return resultado
 
 
 def detalhe_por_pessoa(df_palpites: pd.DataFrame, df_jogos: pd.DataFrame, nome: str) -> pd.DataFrame:

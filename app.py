@@ -13,7 +13,7 @@ import pandas as pd
 from datetime import datetime
 from io import BytesIO
 from utils.sheets import jogos_pendentes, sincronizar_jogos_com_api, carregar_jogos, carregar_palpites, salvar_palpite, carregar_pontuacao_inicial, listar_nomes_participantes
-from utils.scoring import montar_classificacao, detalhe_por_pessoa, montar_conferencia, filtrar_jogos_para_conferencia
+from utils.scoring import montar_classificacao, detalhe_por_pessoa, montar_conferencia, filtrar_jogos_para_conferencia, montar_placares_por_jogo
 from utils.api_copa import buscar_jogos_football_data
 from pathlib import Path
 from components.navbar import navbar
@@ -122,7 +122,7 @@ if pagina == "📝 Meus Palpites":
     st.caption("Jogos com o cadeado 🔒 já começaram e não podem mais ser editados.")
 
     for _, jogo in df_jogos.sort_values("Data").iterrows():
-        game_card(jogo, nome, meus_palpites)
+        game_card(jogo, nome, meus_palpites, agora)
 
 
 # ---------------------------------------------------------------------------
@@ -188,26 +188,51 @@ elif pagina == "📊 Visão Geral":
     completos = int((conferencia["Faltando"] == 0).sum())
     incompletos = len(conferencia) - completos
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total de jogos", int(conferencia["TotalJogos"].iloc[0]))
-    m2.metric("✅ Completaram tudo", completos)
-    m3.metric("⚠️ Ainda faltando", incompletos)
+    aba_pessoa, aba_jogo = st.tabs(["👥 Por pessoa", "⚽ Por jogo"])
 
-    st.markdown("---")
+    with aba_pessoa:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total de jogos", int(conferencia["TotalJogos"].iloc[0]))
+        m2.metric("✅ Completaram tudo", completos)
+        m3.metric("⚠️ Ainda faltando", incompletos)
 
-    ordenado = conferencia.sort_values(["Faltando", "Nome"], ascending=[False, True])
+        st.markdown("---")
 
-    for _, pessoa in ordenado.iterrows():
-        completo = pessoa["Faltando"] == 0
-        rotulo = f"{'✅' if completo else '⚠️'} {pessoa['Nome']} — {pessoa['Preenchidos']}/{pessoa['TotalJogos']} jogos preenchidos"
+        ordenado = conferencia.sort_values(["Faltando", "Nome"], ascending=[False, True])
 
-        with st.expander(rotulo, expanded=not completo):
-            if completo:
-                st.success("Todos os jogos preenchidos! 🎉")
-            else:
-                st.write(f"Faltam **{pessoa['Faltando']}** jogo(s):")
-                for jogo in pessoa["JogosFaltantes"]:
-                    st.write(f"- {jogo}")
+        for _, pessoa in ordenado.iterrows():
+            completo = pessoa["Faltando"] == 0
+            rotulo = f"{'✅' if completo else '⚠️'} {pessoa['Nome']} — {pessoa['Preenchidos']}/{pessoa['TotalJogos']} jogos preenchidos"
+
+            with st.expander(rotulo, expanded=not completo):
+                if completo:
+                    st.success("Todos os jogos preenchidos! 🎉")
+                else:
+                    st.write(f"Faltam **{pessoa['Faltando']}** jogo(s):")
+                    for jogo in pessoa["JogosFaltantes"]:
+                        st.write(f"- {jogo}")
+
+    with aba_jogo:
+        placares_por_jogo = montar_placares_por_jogo(df_palpites, df_jogos_conferencia)
+
+        for _, jogo in df_jogos_conferencia.sort_values("Data").iterrows():
+            jogo_id = str(jogo["JogoID"])
+            palpites_do_jogo = placares_por_jogo.get(jogo_id, [])
+
+            data_str = (
+                jogo["Data"].strftime("%d/%m %H:%M") if pd.notna(jogo["Data"]) else "data a definir"
+            )
+            rotulo = (
+                f"{jogo['Time1']} x {jogo['Time2']} — {data_str} "
+                f"({len(palpites_do_jogo)}/{len(nomes)} já palpitaram)"
+            )
+
+            with st.expander(rotulo):
+                if not palpites_do_jogo:
+                    st.info("Ninguém palpitou este jogo ainda.")
+                else:
+                    for p in palpites_do_jogo:
+                        st.write(f"- **{p['Nome']}**: {p['Placar1']} x {p['Placar2']}")
 
 
 # ---------------------------------------------------------------------------
