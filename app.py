@@ -19,6 +19,7 @@ from pathlib import Path
 from components.navbar import navbar
 from components.game_card import game_card
 from components.ranking_card import ranking_card
+from utils.imagem_ranking import gerar_imagem_classificacao
 
 
 
@@ -142,9 +143,26 @@ elif pagina == "🏆 Classificação":
     if classificacao.empty:
         st.info("Ainda não há pontos calculados (nenhum jogo finalizado ou nenhum palpite registrado).")
     else:
+        pontos_max = classificacao["Pontos"].max()
+
         for posicao, (_, pessoa) in enumerate(classificacao.iterrows(), start=1):
-            ranking_card(pessoa, posicao)
-        exportar_excel(classificacao, "classificacao_bolao_copa.xlsx")
+            ranking_card(pessoa, posicao, pontos_max)
+
+        st.markdown("")
+        col_excel, col_imagem = st.columns(2)
+
+        with col_excel:
+            exportar_excel(classificacao, "classificacao_bolao_copa.xlsx")
+
+        with col_imagem:
+            imagem_png = gerar_imagem_classificacao(classificacao)
+            st.download_button(
+                "📸 Exportar como imagem",
+                data=imagem_png,
+                file_name="classificacao_bolao_copa.png",
+                mime="image/png",
+                use_container_width=True,
+            )
 
     st.markdown("---")
     st.subheader("🔍 Ver detalhes de uma pessoa")
