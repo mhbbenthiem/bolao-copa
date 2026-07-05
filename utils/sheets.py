@@ -33,17 +33,30 @@ def safe_int(value):
         return int(value)
     except (ValueError, TypeError):
         return None
+# Fuso de Brasília. Fixo em UTC-3 porque o Brasil não usa mais horário de
+# verão desde 2019 — se isso mudar, atualizar aqui.
+FUSO_BRASIL = timezone(timedelta(hours=-3))
+
+
 def converter_data_brasil(data_iso: str):
     if not data_iso:
         return None
 
-    # converte string ISO para datetime UTC
+    # converte string ISO (UTC) para datetime "consciente" do fuso
     dt_utc = datetime.fromisoformat(data_iso.replace("Z", "+00:00"))
 
-    # converte para horário do Brasil (UTC-3)
-    dt_br = dt_utc - timedelta(hours=3)
+    # converte corretamente para o horário de Brasília (mantém o instante
+    # real, só troca o fuso/rótulo — usar "- timedelta(hours=3)" aqui seria
+    # errado, pois desloca o relógio SEM trocar o fuso, fazendo a
+    # comparação de "jogo já começou" ficar 3h adiantada)
+    dt_br = dt_utc.astimezone(FUSO_BRASIL)
 
     return dt_br
+
+
+def agora_brasil():
+    """Horário atual no fuso de Brasília, no mesmo formato usado pela coluna 'Data'."""
+    return datetime.now(FUSO_BRASIL)
 @st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
 def carregar_jogos():
     planilha = conectar_planilha()

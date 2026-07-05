@@ -12,7 +12,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from io import BytesIO
-from utils.sheets import jogos_pendentes, sincronizar_jogos_com_api, carregar_jogos, carregar_palpites, salvar_palpite, carregar_pontuacao_inicial, listar_nomes_participantes
+from utils.sheets import jogos_pendentes, sincronizar_jogos_com_api, carregar_jogos, carregar_palpites, salvar_palpite, carregar_pontuacao_inicial, listar_nomes_participantes, agora_brasil
 from utils.scoring import montar_classificacao, detalhe_por_pessoa, montar_conferencia, filtrar_jogos_para_conferencia, montar_placares_por_jogo
 from utils.api_copa import buscar_jogos_football_data
 from pathlib import Path
@@ -111,7 +111,7 @@ if pagina == "📝 Meus Palpites":
         st.warning("Nenhum jogo carregado ainda. Peça ao organizador para atualizar na aba Admin.")
         st.stop()
 
-    agora = pd.Timestamp.now(tz=df_jogos["Data"].dt.tz) if df_jogos["Data"].dt.tz else pd.Timestamp.now()
+    agora = agora_brasil()
 
     meus_palpites = (
         df_palpites[df_palpites["Nome"].str.strip().str.lower() == nome.strip().lower()]
