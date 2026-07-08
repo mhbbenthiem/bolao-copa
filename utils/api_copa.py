@@ -30,7 +30,20 @@ def buscar_jogos_football_data() -> pd.DataFrame:
 
     jogos = []
     for m in dados.get("matches", []):
-        placar = m.get("score", {}).get("fullTime", {})
+        score = m.get("score", {})
+        regular = score.get("regularTime") or {}
+        full = score.get("fullTime") or {}
+
+        # usa o placar do tempo regular quando disponível (jogos que foram
+        # à prorrogação); caso contrário, cai pro fullTime, que nesses
+        # casos já É o placar do tempo regular
+        placar1 = regular.get("home")
+        placar2 = regular.get("away")
+
+        if placar1 is None or placar2 is None:
+            placar1 = full.get("home")
+            placar2 = full.get("away")
+
         jogos.append(
             {
                 "JogoID": m["id"],
@@ -38,8 +51,8 @@ def buscar_jogos_football_data() -> pd.DataFrame:
                 "Time1": m["homeTeam"]["name"],
                 "Time2": m["awayTeam"]["name"],
                 "Grupo": m.get("group"),
-                "PlacarReal1": placar.get("home"),
-                "PlacarReal2": placar.get("away"),
+                "PlacarReal1": placar1,
+                "PlacarReal2": placar2,
                 "Status": m.get("status"),  # SCHEDULED, IN_PLAY, FINISHED...
             }
         )

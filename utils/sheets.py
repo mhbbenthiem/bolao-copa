@@ -113,45 +113,76 @@ def salvar_palpite(nome: str, jogo_id: str, placar1: int, placar2: int):
 
 def valido(valor):
     return valor is not None and valor != ""
-@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
+
 def sincronizar_jogos_com_api():
     dados = buscar_resultados_api()
 
     planilha = conectar_planilha()
     aba = planilha.worksheet("Jogos")
 
+    cabecalho = aba.row_values(1)
+    col_placar1 = cabecalho.index("PlacarReal1") + 1
+    col_placar2 = cabecalho.index("PlacarReal2") + 1
+    col_status = cabecalho.index("Status") + 1
+
+    # confere se as colunas são contíguas (F,G,H) pra poder usar range único
+    contiguas = (col_placar2 == col_placar1 + 1) and (col_status == col_placar2 + 1)
+
     registros = aba.get_all_records()
 
     mapa_linhas = {
-        str(r["JogoID"]): i + 2
+        str(r["JogoID"]): {
+            "linha": i + 2,
+            "placar1_atual": r.get("PlacarReal1"),
+            "placar2_atual": r.get("PlacarReal2"),
+            "status_atual": str(r.get("Status", "")).strip().upper(),
+        }
         for i, r in enumerate(registros)
         if str(r.get("JogoID", "")) != ""
     }
 
     for jogo in dados.get("matches", []):
-
         jogo_id = str(jogo.get("id"))
         status = jogo.get("status")
 
         score = jogo.get("score", {})
-        full = score.get("fullTime", {})
+        regular = score.get("regularTime") or {}
+        full = score.get("fullTime") or {}
 
-        placar1 = full.get("home")
-        placar2 = full.get("away")
+        placar1 = regular.get("home")
+        placar2 = regular.get("away")
+        if not valido(placar1) or not valido(placar2):
+            placar1 = full.get("home")
+            placar2 = full.get("away")
 
-        # 🔥 FILTRO ROBUSTO
-        if (
-            jogo_id in mapa_linhas and
-            valido(placar1) and
-            valido(placar2) and
-            status in ["FINISHED", "FULL_TIME"]
-        ):
-            linha = mapa_linhas[jogo_id]
+        placar1 = safe_int(placar1)
+        placar2 = safe_int(placar2)
 
-            aba.update(
-                f"G{linha}:I{linha}",
-                [[int(placar1), int(placar2), status]]
-            )
+        if jogo_id not in mapa_linhas:
+            continue
+
+        info = mapa_linhas[jogo_id]
+
+        ja_preenchido = (
+            valido(info["placar1_atual"])
+            and valido(info["placar2_atual"])
+            and info["status_atual"] == "FINISHED"
+        )
+        if ja_preenchido:
+            continue
+
+        if valido(placar1) and valido(placar2) and status in ["FINISHED", "FULL_TIME"]:
+            linha = info["linha"]
+            if contiguas:
+                inicio = gspread.utils.rowcol_to_a1(linha, col_placar1)
+                fim = gspread.utils.rowcol_to_a1(linha, col_status)
+                aba.update(f"{inicio}:{fim}", [[placar1, placar2, status]])
+            else:
+                # atualiza célula por célula se as colunas não forem vizinhas
+                aba.update_cell(linha, col_placar1, placar1)
+                aba.update_cell(linha, col_placar2, placar2)
+                aba.update_cell(linha, col_status, status)
+
     carregar_jogos.clear()
 
 @st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
@@ -173,60 +204,19 @@ def jogos_pendentes(nome_usuario: str = None):
 # =========================
 # API FOOTBALL
 # =========================
-@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
+@st.cache_data(ttl=30)
 def buscar_resultados_api():
-    url = "https://api.football-data.org/v4/matches"
+    url = "https://api.football-data.org/v4/competitions/WC/matches"
 
     headers = {
         "X-Auth-Token": st.secrets["FOOTBALL_DATA_API_KEY"]
     }
 
     response = requests.get(url, headers=headers)
+    response.raise_for_status()  # bom adicionar, pra você ver erro de API/token na hora, em vez de descobrir só quando o placar não bate
     return response.json()
 
 
-# =========================
-# SINCRONIZAÇÃO AUTOMÁTICA
-# =========================
-@st.cache_data(ttl=30)  # reaproveita o resultado por 30 segundos
-def sincronizar_jogos_com_api():
-    dados = buscar_resultados_api()
-
-    planilha = conectar_planilha()
-    aba = planilha.worksheet("Jogos")
-
-    registros = aba.get_all_records()
-
-    mapa_linhas = {
-        str(r["JogoID"]): i + 2
-        for i, r in enumerate(registros)
-        if str(r["JogoID"]) != ""
-    }
-
-    for jogo in dados.get("matches", []):
-
-        jogo_id = str(jogo.get("id"))
-        status = jogo.get("status")
-
-        score = jogo.get("score", {})
-        full = score.get("fullTime", {})
-
-        placar1 = full.get("home")
-        placar2 = full.get("away")
-
-        # 🔥 só atualiza se tiver resultado válido
-        if (
-            jogo_id in mapa_linhas and
-            placar1 is not None and
-            placar2 is not None and
-            status in ["FINISHED", "FULL_TIME"]
-        ):
-            linha = mapa_linhas[jogo_id]
-
-            aba.update(
-                f"G{linha}:I{linha}",
-                [[placar1, placar2, status]]
-            )
 
 
 # =========================
